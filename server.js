@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import connectDB from './src/config/db.js';
+import passport from 'passport';
+import './src/config/passport.js';
 import authRoutes from './src/routes/auth.routes.js';
 
 dotenv.config();
@@ -14,6 +16,7 @@ const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
+app.use(passport.initialize());
 
 // Mount API Routes
 app.use('/api/auth', authRoutes);
@@ -28,6 +31,7 @@ app.use((err, req, res, next) => {
   res.status(statusCode).json({
     success: false,
     message: err.message || 'Internal Server Error',
+    code: err.code || undefined,
     stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
   });
 });

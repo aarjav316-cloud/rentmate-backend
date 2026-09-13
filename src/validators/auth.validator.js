@@ -46,3 +46,31 @@ export const refreshTokenSchema = z.object({
     .trim()
     .min(1, 'Refresh token cannot be empty'),
 });
+
+export const oauthExchangeSchema = z.object({
+  code: z
+    .string({ required_error: 'OAuth code is required' })
+    .trim()
+    .min(1, 'OAuth code cannot be empty'),
+});
+
+export const verifyEmailSchema = z.object({
+  email: z
+    .string({ required_error: 'Email is required' })
+    .trim()
+    .email('Invalid email address format')
+    .toLowerCase(),
+  otp: z
+    .string({ required_error: 'OTP is required' })
+    .trim()
+    .length(6, 'OTP must be exactly 6 digits')
+    .regex(/^\d{6}$/, 'OTP must be exactly 6 digits'),
+});
+
+export const resendOtpSchema = z.object({
+  email: z
+    .string({ required_error: 'Email is required' })
+    .trim()
+    .email('Invalid email address format')
+    .toLowerCase(),
+});

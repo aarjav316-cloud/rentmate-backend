@@ -18,8 +18,23 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: [true, 'Password is required'],
-      select: false, // Prevents sending password hash by default
+      required: [
+        function () {
+          return this.authProvider === 'local';
+        },
+        'Password is required for local authentication',
+      ],
+      select: false,
+    },
+    authProvider: {
+      type: String,
+      enum: ['local', 'google'],
+      default: 'local',
+    },
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true,
     },
     phone: {
       type: String,

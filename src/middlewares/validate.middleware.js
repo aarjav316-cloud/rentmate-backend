@@ -15,14 +15,15 @@ export const validate = (schema) => {
     } catch (error) {
       // Check if it's a Zod validation error
       if (error instanceof ZodError) {
-        // Map over the Zod errors to format them securely and cleanly
-        const formattedErrors = error.errors.map((err) => ({
+        // Zod v3+ uses .issues (not .errors) for the validation array
+        const zodIssues = error.issues || error.errors || [];
+        const formattedErrors = zodIssues.map((err) => ({
           field: err.path.join('.'),
           message: err.message,
         }));
 
         return res.status(400).json({
-          status: 'error',
+          success: false,
           message: 'Validation failed',
           errors: formattedErrors,
         });
@@ -33,3 +34,4 @@ export const validate = (schema) => {
     }
   };
 };
+

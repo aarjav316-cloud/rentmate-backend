@@ -1,20 +1,26 @@
 import { Router } from 'express';
+import passport from 'passport';
 import {
   register,
   login,
   refreshToken,
   logout,
   getMe,
+  verifyEmail,
+  resendOtp,
+  googleCallback,
+  googleExchange,
 } from '../controllers/auth.controller.js';
 import { validate } from '../middlewares/validate.middleware.js';
 import {
   registerSchema,
   loginSchema,
   refreshTokenSchema,
+  oauthExchangeSchema,
+  verifyEmailSchema,
+  resendOtpSchema,
 } from '../validators/auth.validator.js';
 
-// Note: To fulfill the 'authentication middleware against protected routes' rule,
-// we import `protect` assuming it will be created next in the architecture.
 import { protect } from '../middlewares/auth.middleware.js';
 
 const router = Router();
@@ -26,6 +32,25 @@ const router = Router();
 router.post('/register', validate(registerSchema), register);
 router.post('/login', validate(loginSchema), login);
 router.post('/refresh-token', validate(refreshTokenSchema), refreshToken);
+
+/**
+ * EMAIL OTP VERIFICATION ROUTES
+ */
+router.post('/verify-email', validate(verifyEmailSchema), verifyEmail);
+router.post('/resend-otp', validate(resendOtpSchema), resendOtp);
+
+/**
+ * GOOGLE OAUTH ROUTES
+ */
+router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+
+router.get(
+  '/google/callback',
+  passport.authenticate('google', { session: false }),
+  googleCallback
+);
+
+router.post('/google/exchange', validate(oauthExchangeSchema), googleExchange);
 
 /**
  * PROTECTED ROUTES 

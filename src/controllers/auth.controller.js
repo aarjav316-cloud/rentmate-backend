@@ -1,19 +1,56 @@
 import * as authService from '../services/auth.service.js';
+import * as googleAuthService from '../services/google-auth.service.js';
 
 /**
- * @desc    Register a new user
+ * @desc    Register a new user (sends OTP, no JWT returned)
  * @route   POST /api/auth/register
  * @access  Public
  */
 export const register = async (req, res, next) => {
   try {
-    // The req.body is already validated by the Zod middleware before reaching here
     const data = await authService.registerUser(req.body);
 
     return res.status(201).json({
       success: true,
-      message: 'User registered successfully',
+      message: 'Verification OTP sent to your email',
       data,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Verify email with OTP and issue JWT tokens
+ * @route   POST /api/auth/verify-email
+ * @access  Public
+ */
+export const verifyEmail = async (req, res, next) => {
+  try {
+    const data = await authService.verifyEmail(req.body);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Email verified successfully',
+      data,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Resend verification OTP
+ * @route   POST /api/auth/resend-otp
+ * @access  Public
+ */
+export const resendOtp = async (req, res, next) => {
+  try {
+    await authService.resendOtp(req.body);
+
+    return res.status(200).json({
+      success: true,
+      message: 'A new verification OTP has been sent',
     });
   } catch (error) {
     next(error);
@@ -46,8 +83,6 @@ export const login = async (req, res, next) => {
  */
 export const refreshToken = async (req, res, next) => {
   try {
-    // Assuming refresh token might be passed in body or cookies depending on config.
-    // For now passing req.body exactly as validated by our schema
     const data = await authService.refreshUserToken(req.body);
 
     return res.status(200).json({
@@ -67,8 +102,6 @@ export const refreshToken = async (req, res, next) => {
  */
 export const logout = async (req, res, next) => {
   try {
-    // Handled in the service layer (e.g., blacklisting tokens, modifying user records)
-    // Safe to pass req.user which would be injected by a future protect/auth middleware
     await authService.logoutUser(req.user);
 
     return res.status(200).json({
@@ -93,6 +126,41 @@ export const getMe = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: 'User profile retrieved successfully',
+      data,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Handle successful Google OAuth callback and redirect to frontend with token code
+ * @route   GET /api/auth/google/callback
+ * @access  Public
+ */
+export const googleCallback = async (req, res, next) => {
+  try {
+    const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const code = googleAuthService.generateOAuthCode(req.user._id);
+    res.redirect(`${FRONTEND_URL}/auth/google/callback?code=${code}`);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Exchange short-lived OAuth code for full JWT tokens
+ * @route   POST /api/auth/google/exchange
+ * @access  Public
+ */
+export const googleExchange = async (req, res, next) => {
+  try {
+    const { code } = req.body;
+    const data = await googleAuthService.exchangeOAuthCode(code);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Google authentication successful',
       data,
     });
   } catch (error) {
