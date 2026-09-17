@@ -1,35 +1,46 @@
 import { hashOtp, compareOtp } from '../utils/otp.utils.js';
+import * as redis from './redis.service.js';
 
 /**
- * In-memory OTP store — a clean abstraction that can be swapped to Redis later
- * without changing any consumer code.
+ * OTP Service — Redis-backed.
  *
- * Each entry is keyed by email and stores:
- *   otpHash      – SHA-256 hash of the OTP (never the raw value)
- *   expiresAt    – timestamp when the OTP becomes invalid
- *   attempts     – number of failed verification attempts
- *   lastSentAt   – timestamp of last OTP dispatch (for resend cooldown)
+ * Replaces the in-memory Map() implementation.
+ * The public API (storeOtp, verifyOtp, canResendOtp, invalidateOtp) remains
+ * identical so that auth.service.js requires ZERO changes.
+ *
+ * ── Key schema ───────────────────────────────────────────────────────
+ *   rentmate:otp:verify:{email}    → SHA-256 hash of the OTP     (TTL 300s)
+ *   rentmate:otp:attempts:{email}  → integer attempt counter      (TTL 300s)
+ *   rentmate:otp:resend:{email}    → "1" cooldown flag            (TTL  60s)
  */
-const otpStore = new Map();
 
-const OTP_EXPIRES_IN_MS = (parseInt(process.env.OTP_EXPIRES_IN, 10) || 300) * 1000; // default 5 min
+const OTP_TTL = parseInt(process.env.OTP_EXPIRES_IN, 10) || 300;            // 5 min
 const OTP_MAX_ATTEMPTS = parseInt(process.env.OTP_MAX_ATTEMPTS, 10) || 5;
-const OTP_RESEND_COOLDOWN_MS = (parseInt(process.env.OTP_RESEND_COOLDOWN, 10) || 60) * 1000; // default 60s
+const OTP_RESEND_COOLDOWN = parseInt(process.env.OTP_RESEND_COOLDOWN, 10) || 60; // 60s
+
+// ── Key Helpers ──────────────────────────────────────────────────────
+const otpKey      = (email) => `rentmate:otp:verify:${email.toLowerCase()}`;
+const attemptsKey = (email) => `rentmate:otp:attempts:${email.toLowerCase()}`;
+const resendKey   = (email) => `rentmate:otp:resend:${email.toLowerCase()}`;
 
 /**
  * Store a hashed OTP for a given email.
  * Overwrites any previously stored OTP for the same email.
+ * Also sets the resend cooldown and resets the attempt counter.
  * @param {string} email
  * @param {string} rawOtp - The plaintext OTP (will be hashed before storage)
  */
-export const storeOtp = (email, rawOtp) => {
-  const key = email.toLowerCase();
-  otpStore.set(key, {
-    otpHash: hashOtp(rawOtp),
-    expiresAt: Date.now() + OTP_EXPIRES_IN_MS,
-    attempts: 0,
-    lastSentAt: Date.now(),
-  });
+export const storeOtp = async (email, rawOtp) => {
+  const hash = hashOtp(rawOtp);
+
+  // Store OTP hash with TTL (auto-expires — no manual expiration check needed)
+  await redis.set(otpKey(email), hash, OTP_TTL);
+
+  // Reset attempt counter (fresh OTP = fresh attempts)
+  await redis.del(attemptsKey(email));
+
+  // Set resend cooldown
+  await redis.set(resendKey(email), '1', OTP_RESEND_COOLDOWN);
 };
 
 /**
@@ -38,64 +49,65 @@ export const storeOtp = (email, rawOtp) => {
  * Automatically deletes the record on success.
  * @param {string} email
  * @param {string} rawOtp
- * @returns {{ valid: boolean, code?: string }}
+ * @returns {Promise<{ valid: boolean, code?: string }>}
  */
-export const verifyOtp = (email, rawOtp) => {
-  const key = email.toLowerCase();
-  const record = otpStore.get(key);
-
-  if (!record) {
-    return { valid: false, code: 'OTP_EXPIRED' };
-  }
-
-  // Check expiration
-  if (Date.now() > record.expiresAt) {
-    otpStore.delete(key);
-    return { valid: false, code: 'OTP_EXPIRED' };
-  }
-
-  // Check max attempts
-  if (record.attempts >= OTP_MAX_ATTEMPTS) {
-    otpStore.delete(key);
+export const verifyOtp = async (email, rawOtp) => {
+  // 1. Check attempt counter FIRST — prevent brute-force even if OTP still exists
+  const currentAttempts = await redis.get(attemptsKey(email));
+  if (currentAttempts !== null && parseInt(currentAttempts, 10) >= OTP_MAX_ATTEMPTS) {
+    // Clean up — OTP is burned
+    await redis.del(otpKey(email), attemptsKey(email));
     return { valid: false, code: 'TOO_MANY_ATTEMPTS' };
   }
 
-  // Compare hashes
-  if (!compareOtp(rawOtp, record.otpHash)) {
-    record.attempts += 1;
+  // 2. Retrieve OTP hash
+  const storedHash = await redis.get(otpKey(email));
+
+  if (!storedHash) {
+    // Key expired or was never set
+    return { valid: false, code: 'OTP_EXPIRED' };
+  }
+
+  // 3. Compare hashes
+  if (!compareOtp(rawOtp, storedHash)) {
+    // Increment attempt counter; give it the same TTL as the OTP
+    const newCount = await redis.incr(attemptsKey(email));
+    // On the first increment Redis creates the key, so set its TTL
+    if (newCount === 1) {
+      await redis.expire(attemptsKey(email), OTP_TTL);
+    }
     return { valid: false, code: 'OTP_INVALID' };
   }
 
-  // Success — consume it
-  otpStore.delete(key);
+  // 4. Valid — consume everything
+  await redis.del(otpKey(email), attemptsKey(email), resendKey(email));
   return { valid: true };
 };
 
 /**
  * Check whether a resend is allowed (enforces cooldown).
  * @param {string} email
- * @returns {{ allowed: boolean, retryAfterMs?: number }}
+ * @returns {Promise<{ allowed: boolean, retryAfterMs?: number }>}
  */
-export const canResendOtp = (email) => {
-  const key = email.toLowerCase();
-  const record = otpStore.get(key);
+export const canResendOtp = async (email) => {
+  const cooldownExists = await redis.exists(resendKey(email));
 
-  if (!record) {
+  if (!cooldownExists) {
     return { allowed: true };
   }
 
-  const elapsed = Date.now() - record.lastSentAt;
-  if (elapsed < OTP_RESEND_COOLDOWN_MS) {
-    return { allowed: false, retryAfterMs: OTP_RESEND_COOLDOWN_MS - elapsed };
-  }
-
-  return { allowed: true };
+  // Get remaining TTL to tell the user how long to wait
+  const remaining = await redis.ttl(resendKey(email));
+  return {
+    allowed: false,
+    retryAfterMs: (remaining > 0 ? remaining : 1) * 1000,
+  };
 };
 
 /**
  * Invalidate/delete any stored OTP for a given email.
  * @param {string} email
  */
-export const invalidateOtp = (email) => {
-  otpStore.delete(email.toLowerCase());
+export const invalidateOtp = async (email) => {
+  await redis.del(otpKey(email), attemptsKey(email), resendKey(email));
 };

@@ -67,7 +67,7 @@ export const registerUser = async (userData) => {
 
     // Generate and send fresh OTP
     const otp = generateOtp();
-    storeOtp(email, otp);
+    await storeOtp(email, otp);
 
     try {
       await sendVerificationOtpEmail(email, otp);
@@ -102,7 +102,7 @@ export const registerUser = async (userData) => {
 
   // 4. Generate OTP, store hash, send email
   const otp = generateOtp();
-  storeOtp(email, otp);
+  await storeOtp(email, otp);
 
   try {
     await sendVerificationOtpEmail(email, otp);
@@ -144,7 +144,7 @@ export const verifyEmail = async ({ email, otp }) => {
   }
 
   // 2. Verify OTP through the OTP service
-  const result = verifyOtp(email, otp);
+  const result = await verifyOtp(email, otp);
 
   if (!result.valid) {
     const statusMap = {
@@ -203,7 +203,7 @@ export const resendOtp = async ({ email }) => {
   }
 
   // 2. Check cooldown
-  const cooldownCheck = canResendOtp(email);
+  const cooldownCheck = await canResendOtp(email);
   if (!cooldownCheck.allowed) {
     const error = new Error(
       `Please wait ${Math.ceil(cooldownCheck.retryAfterMs / 1000)} seconds before requesting a new OTP.`
@@ -215,7 +215,7 @@ export const resendOtp = async ({ email }) => {
 
   // 3. Generate, store, send new OTP (old one is overwritten)
   const otp = generateOtp();
-  storeOtp(email, otp);
+  await storeOtp(email, otp);
 
   try {
     await sendVerificationOtpEmail(email, otp);

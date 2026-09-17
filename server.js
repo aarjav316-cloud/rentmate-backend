@@ -2,14 +2,21 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import connectDB from './src/config/db.js';
+import { connectRedis, redisClient } from './src/config/redis.js';
 import passport from 'passport';
 import './src/config/passport.js';
+import mongoose from 'mongoose';
 import authRoutes from './src/routes/auth.routes.js';
+import onboardingRoutes from './src/routes/onboarding.routes.js';
+import userRoutes from './src/routes/user.routes.js';
+import propertyRoutes from './src/routes/property.routes.js';
+import rateLimit from './src/middlewares/rateLimit.middleware.js';
 
 dotenv.config();
 
-// Connect to MongoDB Database
+// Connect to MongoDB + Redis
 connectDB();
+connectRedis();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -21,11 +28,46 @@ app.use(passport.initialize());
 // Mount API Routes
 app.use('/api/auth', authRoutes);
 
+// ── General API Rate Limiter (v1 routes) ─────────────────────────────
+const generalApiLimiter = rateLimit({
+  windowSeconds: 900,    // 15 minutes
+  maxRequests: 100,
+  keyPrefix: 'general',
+});
+app.use('/api/v1', generalApiLimiter);
+
+app.use('/api/v1/onboarding', onboardingRoutes);
+app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/properties', propertyRoutes);
+
+// ── Root ─────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
   res.send('Rent-Mate Backend API Running');
 });
 
-// Global Error Handler (Catches next(error) from anywhere)
+// ── Health Endpoint ──────────────────────────────────────────────────
+app.get('/api/v1/health', async (req, res) => {
+  const mongoStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+
+  let redisStatus = 'disconnected';
+  try {
+    await redisClient.ping();
+    redisStatus = 'connected';
+  } catch {
+    redisStatus = 'disconnected';
+  }
+
+  res.status(200).json({
+    success: true,
+    message: 'RentMate API is running',
+    services: {
+      mongodb: mongoStatus,
+      redis: redisStatus,
+    },
+  });
+});
+
+// ── Global Error Handler ─────────────────────────────────────────────
 app.use((err, req, res, next) => {
   const statusCode = err.statusCode || 500;
   res.status(statusCode).json({
