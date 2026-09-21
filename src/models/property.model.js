@@ -121,24 +121,36 @@ const propertySchema = new mongoose.Schema(
 );
 
 // ── Indexes ──────────────────────────────────────────────────────────
+// Optimized based on explain("executionStats") analysis of actual query patterns.
+//
+// MongoDB automatically creates an index on _id — no manual index needed.
+//
+// REMOVED (redundant/low-value):
+//   { status: 1 }         — subsumed by the compound { status, location.city, rent }
+//   { propertyType: 1 }   — always queried with status; low standalone selectivity
+//   { location.city: 1 }  — fully covered by the compound index for status + city queries
+//
+// KEPT:
+//   { createdBy: 1 }                          — essential for GET /my (high selectivity)
+//   { rent: 1 }                               — enables sort-by-rent without in-memory SORT
+//   { status, location.city, rent }           — primary compound for discovery filters
+//
+// ADDED:
+//   { status: 1, rent: 1 }                    — covers status + rent range (without city)
+//     explain showed this common query was falling back to the single status_1 index
+//     which requires in-memory filtering of rent range after FETCH
 
-// 1. For "My Listings" queries
+// 1. For "My Listings" queries — { createdBy: userId }
 propertySchema.index({ createdBy: 1 });
 
-// 2. For retrieving only AVAILABLE properties
-propertySchema.index({ status: 1 });
-
-// 3. For filtering by property type
-propertySchema.index({ propertyType: 1 });
-
-// 4. For location-based filtering
-propertySchema.index({ 'location.city': 1 });
-
-// 5. For rent range filtering
+// 2. For sort-by-rent queries — sort: { rent: 1 } or sort: { rent: -1 }
 propertySchema.index({ rent: 1 });
 
-// 6. Compound index to support common queries such as:
-// available properties in a city within a rent range.
+// 3. For status + rent range — { status: AVAILABLE, rent: { $gte, $lte } }
+propertySchema.index({ status: 1, rent: 1 });
+
+// 4. Primary compound for discovery — { status: AVAILABLE, location.city: X, rent: range }
+//    Follows Equality-Sort-Range (ESR) ordering.
 propertySchema.index({ status: 1, 'location.city': 1, rent: 1 });
 
 const Property = mongoose.model('Property', propertySchema);

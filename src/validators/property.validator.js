@@ -155,3 +155,77 @@ export const updatePropertySchema = z
     (data) => Object.keys(data).length > 0,
     { message: 'At least one field must be provided for update' }
   );
+
+// ── Property Discovery Query Schema ──────────────────────────────────
+// Validates query parameters for GET /api/v1/properties
+// All query params arrive as strings, so z.coerce is used for numbers/dates.
+
+const SORT_FIELDS = ['createdAt', 'rent', 'availableFrom'];
+const SORT_ORDERS = ['asc', 'desc'];
+
+export const propertyQuerySchema = z
+  .object({
+    // Keyword search
+    search: z.string().trim().max(200, 'Search query too long').optional(),
+
+    // Location filters
+    city: z.string().trim().max(100).optional(),
+    state: z.string().trim().max(100).optional(),
+
+    // Rent range
+    minRent: z.coerce.number().min(0, 'Minimum rent cannot be negative').optional(),
+    maxRent: z.coerce.number().min(0, 'Maximum rent cannot be negative').optional(),
+
+    // Property type
+    propertyType: z.enum(PROPERTY_TYPES, {
+      errorMap: () => ({ message: `Property type must be one of: ${PROPERTY_TYPES.join(', ')}` }),
+    }).optional(),
+
+    // Bedroom range
+    minBedrooms: z.coerce.number().int('Bedrooms must be a whole number').min(0).optional(),
+    maxBedrooms: z.coerce.number().int('Bedrooms must be a whole number').min(0).optional(),
+
+    // Amenities (comma-separated string from URL)
+    amenities: z.string().trim().max(500).optional(),
+
+    // Availability
+    availableFrom: z.coerce.date({ invalid_type_error: 'Available from must be a valid date' }).optional(),
+
+    // Status
+    status: z.enum(PROPERTY_STATUSES, {
+      errorMap: () => ({ message: `Status must be one of: ${PROPERTY_STATUSES.join(', ')}` }),
+    }).optional(),
+
+    // Pagination
+    page: z.coerce.number().int().min(1, 'Page must be at least 1').default(1),
+    limit: z.coerce.number().int().min(1, 'Limit must be at least 1').max(50, 'Limit cannot exceed 50').default(12),
+
+    // Sorting
+    sortBy: z.enum(SORT_FIELDS, {
+      errorMap: () => ({ message: `Sort field must be one of: ${SORT_FIELDS.join(', ')}` }),
+    }).default('createdAt'),
+    sortOrder: z.enum(SORT_ORDERS, {
+      errorMap: () => ({ message: 'Sort order must be asc or desc' }),
+    }).default('desc'),
+  })
+  .strip() // Silently drop unknown query parameters instead of erroring
+  .superRefine((data, ctx) => {
+    if (data.minRent !== undefined && data.maxRent !== undefined) {
+      if (data.minRent > data.maxRent) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Minimum rent cannot be greater than maximum rent',
+          path: ['minRent'],
+        });
+      }
+    }
+    if (data.minBedrooms !== undefined && data.maxBedrooms !== undefined) {
+      if (data.minBedrooms > data.maxBedrooms) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Minimum bedrooms cannot be greater than maximum bedrooms',
+          path: ['minBedrooms'],
+        });
+      }
+    }
+  });

@@ -10,6 +10,7 @@ import authRoutes from './src/routes/auth.routes.js';
 import onboardingRoutes from './src/routes/onboarding.routes.js';
 import userRoutes from './src/routes/user.routes.js';
 import propertyRoutes from './src/routes/property.routes.js';
+import propertyPreferenceRoutes from './src/routes/propertyPreference.routes.js';
 import rateLimit from './src/middlewares/rateLimit.middleware.js';
 
 dotenv.config();
@@ -39,6 +40,7 @@ app.use('/api/v1', generalApiLimiter);
 app.use('/api/v1/onboarding', onboardingRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/properties', propertyRoutes);
+app.use('/api/v1/preferences/property', propertyPreferenceRoutes);
 
 // ── Root ─────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {

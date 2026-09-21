@@ -2,22 +2,25 @@ import { Router } from 'express';
 import {
   createProperty,
   getProperties,
+  getPropertyDiscoverySummary,
   getPropertyById,
   updateProperty,
   deleteProperty,
   getMyProperties,
 } from '../controllers/property.controller.js';
 import { protect } from '../middlewares/auth.middleware.js';
-import { validate } from '../middlewares/validate.middleware.js';
+import { validate, validateQuery } from '../middlewares/validate.middleware.js';
 import {
   createPropertySchema,
   updatePropertySchema,
+  propertyQuerySchema,
 } from '../validators/property.validator.js';
 
 const router = Router();
 
 // ── Public Routes ────────────────────────────────────────────────────
-router.get('/', getProperties);
+router.get('/', validateQuery(propertyQuerySchema), getProperties);
+router.get('/discovery/summary', validateQuery(propertyQuerySchema), getPropertyDiscoverySummary);
 
 // ── Protected Routes ─────────────────────────────────────────────────
 
