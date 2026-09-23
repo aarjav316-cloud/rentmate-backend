@@ -1,6 +1,8 @@
+// ── Load .env FIRST via side-effect import (ESM hoists all imports, so this must be an import) ──
+import 'dotenv/config';
+
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import connectDB from './src/config/db.js';
 import { connectRedis, redisClient } from './src/config/redis.js';
 import passport from 'passport';
@@ -12,8 +14,6 @@ import userRoutes from './src/routes/user.routes.js';
 import propertyRoutes from './src/routes/property.routes.js';
 import propertyPreferenceRoutes from './src/routes/propertyPreference.routes.js';
 import rateLimit from './src/middlewares/rateLimit.middleware.js';
-
-dotenv.config();
 
 // Connect to MongoDB + Redis
 connectDB();
