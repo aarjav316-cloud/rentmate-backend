@@ -4,6 +4,7 @@ import User from '../models/user.model.js';
 import { generateOtp } from '../utils/otp.utils.js';
 import { storeOtp, verifyOtp, canResendOtp, invalidateOtp } from './otp.service.js';
 import { sendVerificationOtpEmail } from './email.service.js';
+import * as redis from './redis.service.js';
 
 // Fallbacks are placed here strictly to prevent crashing, but these should live in .env
 const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'secret-access-key-replace-me';
@@ -308,8 +309,13 @@ export const refreshUserToken = async ({ refreshToken }) => {
       throw error; 
     }
 
-    // NOTE: Space left intentionally here to hook into a Redis store later 
-    // to check for blacklisted/revoked refresh tokens.
+    // 2.5 Check if token is blacklisted in Redis
+    const isBlacklisted = await redis.exists(`blacklist_${refreshToken}`);
+    if (isBlacklisted) {
+      const error = new Error('Refresh token has been revoked');
+      error.statusCode = 401;
+      throw error;
+    }
 
     // 3. Generate a brand new token pair (Token Rotation & embedding role)
     const tokens = generateTokens(user._id, user.role);
@@ -327,15 +333,17 @@ export const refreshUserToken = async ({ refreshToken }) => {
 /**
  * Handle user logout logic
  * @param {Object} userSession 
+ * @param {string} [refreshToken] - Optional refresh token to blacklist
  */
-export const logoutUser = async (userSession) => {
+export const logoutUser = async (userSession, refreshToken) => {
   // If no session exists gracefully succeed
   if (!userSession || !userSession.id) return true;
 
-  // In the future (Redis integration step), you would:
-  // 1. Retrieve the incoming token or token jti
-  // 2. Push it to a redis 'blacklist' set so it can no longer be used.
-  // await redisClient.set(`blacklist_${token}`, true, 'EX', tokenExpiryInSeconds);
+  // Blacklist the refresh token to prevent reuse after logout
+  if (refreshToken) {
+    const SEVEN_DAYS_IN_SECONDS = 7 * 24 * 60 * 60;
+    await redis.set(`blacklist_${refreshToken}`, '1', SEVEN_DAYS_IN_SECONDS);
+  }
   
   return true;
 };
