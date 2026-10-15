@@ -5,6 +5,7 @@ import {
   getCachedData,
   setCachedData,
   invalidatePropertyDiscoveryCaches,
+  invalidateAllRecommendationCaches,
 } from '../utils/cache.utils.js';
 
 /**
@@ -49,6 +50,7 @@ export const createProperty = async (req, res, next) => {
 
     // Invalidate discovery caches since a new property is available
     await invalidatePropertyDiscoveryCaches();
+    await invalidateAllRecommendationCaches();
 
     return res.status(201).json({
       success: true,
@@ -380,6 +382,7 @@ export const updateProperty = async (req, res, next) => {
 
     // Invalidate discovery caches since this property was updated
     await invalidatePropertyDiscoveryCaches();
+    await invalidateAllRecommendationCaches();
 
     return res.status(200).json({
       success: true,
@@ -425,6 +428,7 @@ export const deleteProperty = async (req, res, next) => {
 
     // Invalidate discovery caches since this property was removed
     await invalidatePropertyDiscoveryCaches();
+    await invalidateAllRecommendationCaches();
 
     return res.status(200).json({
       success: true,

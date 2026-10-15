@@ -1,4 +1,5 @@
 import PropertyPreference from '../models/propertyPreference.model.js';
+import { invalidateUserRecommendationCaches } from '../utils/cache.utils.js';
 
 // ──────────────────────────────────────────────────────────────────────
 // 1. CREATE PROPERTY PREFERENCE
@@ -27,12 +28,16 @@ export const createPropertyPreference = async (req, res, next) => {
       user: req.user.id,
     });
 
+    // Invalidate recommendation caches — new preferences affect future recommendations
+    await invalidateUserRecommendationCaches(req.user.id);
+
     return res.status(201).json({
       success: true,
       message: 'Property preferences created successfully',
       data: preference,
     });
   } catch (error) {
+
     // Handle MongoDB duplicate-key error (race condition safety net)
     if (error.code === 11000) {
       return res.status(409).json({
@@ -102,6 +107,9 @@ export const updateMyPropertyPreference = async (req, res, next) => {
       }
     );
 
+    // Invalidate recommendation caches — updated preferences change scoring
+    await invalidateUserRecommendationCaches(req.user.id);
+
     return res.status(200).json({
       success: true,
       message: 'Property preferences updated successfully',
@@ -131,6 +139,9 @@ export const deleteMyPropertyPreference = async (req, res, next) => {
         message: 'Property preferences not found',
       });
     }
+
+    // Invalidate recommendation caches — no preferences means no recommendations
+    await invalidateUserRecommendationCaches(req.user.id);
 
     return res.status(200).json({
       success: true,
