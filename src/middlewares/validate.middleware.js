@@ -37,14 +37,15 @@ export const validate = (schema) => {
 
 /**
  * Validates req.query against a Zod schema.
- * Replaces req.query with the parsed, clean output.
+ * Stores the parsed, clean output in req.validatedQuery instead of
+ * overwriting req.query, which is read-only in Express 5.
  * Uses the same error response format as the body validator.
  */
 export const validateQuery = (schema) => {
   return async (req, res, next) => {
     try {
       const parsedQuery = await schema.parseAsync(req.query);
-      req.query = parsedQuery;
+      req.validatedQuery = parsedQuery;
       next();
     } catch (error) {
       if (error instanceof ZodError) {

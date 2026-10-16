@@ -79,7 +79,8 @@ const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export const getProperties = async (req, res, next) => {
   try {
     // ── 0. Check Redis Cache First ─────────────────────────────────
-    const cacheKey = generateDiscoveryCacheKey(req.query);
+    const validatedQuery = req.validatedQuery;
+    const cacheKey = generateDiscoveryCacheKey(validatedQuery);
     const cachedResponse = await getCachedData(cacheKey);
 
     if (cachedResponse) {
@@ -101,7 +102,7 @@ export const getProperties = async (req, res, next) => {
       limit,
       sortBy,
       sortOrder,
-    } = req.query;
+    } = validatedQuery;
 
     // ── 1. Build the MongoDB filter ────────────────────────────────
 
@@ -225,7 +226,7 @@ export const getProperties = async (req, res, next) => {
 export const getPropertyDiscoverySummary = async (req, res, next) => {
   try {
     // Only extract the subset of filters that make sense for the summary
-    const { city, propertyType, minRent, maxRent } = req.query;
+    const { city, propertyType, minRent, maxRent } = req.validatedQuery;
 
     // 1. Build the $match stage (similar to getProperties but strictly for discovery summary)
     const matchStage = { status: 'AVAILABLE' };

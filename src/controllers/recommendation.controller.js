@@ -35,7 +35,7 @@ const OWNER_PUBLIC_FIELDS = 'name email avatar phone';
 export const getRecommendedProperties = async (req, res, next) => {
   try {
     const userId = req.user.id;
-    const { page, limit } = req.query;
+    const { page, limit } = req.validatedQuery;
 
     // ── Load preferences (needed for cache key + scoring) ─────────────
     const preferences = await PropertyPreference.findOne({ user: userId }).lean();
