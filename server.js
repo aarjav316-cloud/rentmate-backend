@@ -4,7 +4,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import connectDB from './src/config/db.js';
-import { connectRedis, redisClient } from './src/config/redis.js';
+import { connectRedis, isRedisReady, redisClient } from './src/config/redis.js';
 import passport from 'passport';
 import './src/config/passport.js';
 import mongoose from 'mongoose';
@@ -53,13 +53,7 @@ app.get('/', (req, res) => {
 app.get('/api/v1/health', async (req, res) => {
   const mongoStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
 
-  let redisStatus = 'disconnected';
-  try {
-    await redisClient.ping();
-    redisStatus = 'connected';
-  } catch {
-    redisStatus = 'disconnected';
-  }
+  let redisStatus = isRedisReady() ? 'connected' : 'disconnected';
 
   res.status(200).json({
     success: true,

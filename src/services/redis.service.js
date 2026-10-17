@@ -1,10 +1,13 @@
-import { redisClient } from '../config/redis.js';
+import { redisClient, isRedisReady } from '../config/redis.js';
 
 /**
  * Redis Service — clean abstraction over the raw Redis client.
  *
  * Controllers and services should use these functions instead of
  * accessing redisClient directly.
+ *
+ * When Redis is unavailable every function returns a safe default
+ * (null / 0 / false) so callers never crash.
  */
 
 /**
@@ -14,6 +17,7 @@ import { redisClient } from '../config/redis.js';
  * @param {number} [ttlSeconds] - Time-to-live in seconds. Omit for no expiry.
  */
 export const set = async (key, value, ttlSeconds) => {
+  if (!isRedisReady()) return;
   if (ttlSeconds) {
     await redisClient.set(key, value, { EX: ttlSeconds });
   } else {
@@ -27,6 +31,7 @@ export const set = async (key, value, ttlSeconds) => {
  * @returns {Promise<string|null>}
  */
 export const get = async (key) => {
+  if (!isRedisReady()) return null;
   return redisClient.get(key);
 };
 
@@ -36,6 +41,7 @@ export const get = async (key) => {
  * @returns {Promise<number>} Number of keys removed.
  */
 export const del = async (...keys) => {
+  if (!isRedisReady()) return 0;
   return redisClient.del(keys);
 };
 
@@ -45,6 +51,7 @@ export const del = async (...keys) => {
  * @returns {Promise<boolean>}
  */
 export const exists = async (key) => {
+  if (!isRedisReady()) return false;
   const result = await redisClient.exists(key);
   return result === 1;
 };
@@ -56,6 +63,7 @@ export const exists = async (key) => {
  * @returns {Promise<boolean>}
  */
 export const expire = async (key, ttlSeconds) => {
+  if (!isRedisReady()) return false;
   const result = await redisClient.expire(key, ttlSeconds);
   return result;
 };
@@ -67,6 +75,7 @@ export const expire = async (key, ttlSeconds) => {
  * @returns {Promise<number>} The value after incrementing.
  */
 export const incr = async (key) => {
+  if (!isRedisReady()) return 0;
   return redisClient.incr(key);
 };
 
@@ -76,5 +85,7 @@ export const incr = async (key) => {
  * @returns {Promise<number>} TTL in seconds, -1 if no expiry, -2 if key does not exist.
  */
 export const ttl = async (key) => {
+  if (!isRedisReady()) return -2;
   return redisClient.ttl(key);
 };
+
