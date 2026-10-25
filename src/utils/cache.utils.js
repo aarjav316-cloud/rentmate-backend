@@ -71,7 +71,7 @@ export const setCachedData = async (key, data, ttlSeconds = DISCOVERY_CACHE_TTL)
  */
 export const invalidatePropertyDiscoveryCaches = async () => {
   if (!redisClient.isReady) return;
-  
+
   try {
     let cursor = 0;
     const match = `${DISCOVERY_CACHE_PREFIX}:*`;
@@ -84,7 +84,7 @@ export const invalidatePropertyDiscoveryCaches = async () => {
         MATCH: match,
         COUNT: 100, // Small batch size to avoid blocking
       });
-      
+
       cursor = scanResult.cursor;
       keysToDelete.push(...scanResult.keys);
     } while (cursor !== 0);
@@ -129,6 +129,7 @@ export const generateRecommendationCacheKey = (userId, preferences, page, limit)
 
   // Sort keys for deterministic serialization
   const sortedKeys = Object.keys(prefsForHash).sort();
+
   const sorted = {};
   for (const key of sortedKeys) {
     const val = prefsForHash[key];
