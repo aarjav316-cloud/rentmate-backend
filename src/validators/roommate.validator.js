@@ -200,6 +200,7 @@ export const updateRoommateProfileSchema = z
  * Validates query parameters for GET /api/v1/roommates/discovery.
  * - Coerces query strings to appropriate numbers/types.
  * - Enforces sensible pagination defaults (page=1, limit=12, max limit=50).
+ * - Supports search query and location filter (city override).
  * - Supports demographic filters (gender, minAge, maxAge).
  * - Supports budget range filters (budgetMin/budgetMax and minBudget/maxBudget).
  * - Supports lifestyle filters (cleanliness, sleepSchedule, smoking, drinking, pets, diet, guests).
@@ -222,6 +223,14 @@ export const roommateDiscoveryQuerySchema = z
 
     // Search query
     search: z.string().trim().max(100, 'Search query cannot exceed 100 characters').optional(),
+
+    // Location filter (city override)
+    city: z
+      .string({ invalid_type_error: 'City must be a string' })
+      .trim()
+      .min(1, 'City cannot be empty')
+      .max(100, 'City cannot exceed 100 characters')
+      .optional(),
 
     // Demographic filters
     gender: z.enum(GENDER_ENUM, {
@@ -270,9 +279,9 @@ export const roommateDiscoveryQuerySchema = z
     }).optional(),
 
     // Sorting
-    sortBy: z.enum(['createdAt', 'budgetMin', 'budgetMax', 'age'], {
-      errorMap: () => ({ message: 'Sort field must be one of: createdAt, budgetMin, budgetMax, age' }),
-    }).default('createdAt'),
+    sortBy: z.enum(['compatibility', 'createdAt', 'budgetMin', 'budgetMax', 'age'], {
+      errorMap: () => ({ message: 'Sort field must be one of: compatibility, createdAt, budgetMin, budgetMax, age' }),
+    }).default('compatibility'),
     sortOrder: z.enum(['asc', 'desc'], {
       errorMap: () => ({ message: 'Sort order must be asc or desc' }),
     }).default('desc'),

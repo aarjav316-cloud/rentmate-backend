@@ -143,20 +143,16 @@ export const discoverRoommates = async (req, res, next) => {
  */
 export const interactWithRoommate = async (req, res, next) => {
   try {
-    const userId = getUserId(req);
+    const fromUserId = getUserId(req);
+    const targetUserId = req.params?.userId || req.params?.toUserId || req.params?.id || req.body?.toUser;
+    const { action } = req.body || {};
 
-    // Support target user ID from request body or URL route parameter (:id or :toUserId)
-    const interactionPayload = {
-      ...req.body,
-      toUser: req.body?.toUser || req.params?.toUserId || req.params?.id,
-    };
-
-    const result = await roommateService.interactWithRoommate(userId, interactionPayload);
+    const result = await roommateService.interactWithRoommate(fromUserId, targetUserId, action);
 
     let message;
     if (result.isMatch) {
       message = "It's a match! You and this roommate liked each other.";
-    } else if (interactionPayload.action === 'LIKE') {
+    } else if (action === 'LIKE') {
       message = 'Roommate liked successfully';
     } else {
       message = 'Roommate passed successfully';

@@ -418,19 +418,56 @@ export const discoverRoommates = async (userId, queryFilters = {}) => {
 /**
  * Records a user's LIKE or PASS decision on a candidate roommate.
  * Uses a Mongoose session and transaction for multi-document writes (interaction + match creation).
- * Handles race conditions and mutual likes concurrently and safely.
+ * Handles race conditions and mutual likes concurrently and safely without attempting
+ * queries on aborted transactions.
  *
  * @param {string} fromUserId - Authenticated user's ID
- * @param {Object} interactionData - { toUser, action }
- * @returns {Promise<Object>} { interaction, match, isMatch }
+ * @param {string|Object} targetUserId - Target roommate user ID (or object containing targetUserId/action)
+ * @param {string|Object} [actionInput] - Interaction action 'LIKE' | 'PASS' (or object containing action)
+ * @returns {Promise<Object>} { interaction, isMatch, match }
  */
-export const interactWithRoommate = async (fromUserId, { toUser, targetUserId, userId, action }) => {
-  const targetId = toUser || targetUserId || userId;
+export const interactWithRoommate = async (fromUserId, targetUserId, actionInput) => {
+  let targetId = targetUserId;
+  let action = actionInput;
+
+  // Support both (fromUserId, targetUserId, action) and legacy object payloads
+  if (typeof targetUserId === 'object' && targetUserId !== null) {
+    targetId = targetUserId.targetUserId || targetUserId.toUser || targetUserId.userId;
+    action = targetUserId.action;
+  } else if (typeof actionInput === 'object' && actionInput !== null) {
+    action = actionInput.action;
+  }
+
+  // Normalize action string
+  if (typeof action === 'string') {
+    action = action.trim().toUpperCase();
+  }
+
+  if (!fromUserId) {
+    const error = new Error('Authenticated user ID is required');
+    error.statusCode = 401;
+    error.code = 'UNAUTHORIZED';
+    throw error;
+  }
 
   if (!targetId) {
     const error = new Error('Target user ID is required');
     error.statusCode = 400;
     error.code = 'TARGET_USER_REQUIRED';
+    throw error;
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(fromUserId)) {
+    const error = new Error('Invalid authenticated user ID format');
+    error.statusCode = 400;
+    error.code = 'INVALID_USER_ID';
+    throw error;
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(targetId)) {
+    const error = new Error('Invalid target user ID format');
+    error.statusCode = 400;
+    error.code = 'INVALID_TARGET_USER_ID';
     throw error;
   }
 
@@ -443,7 +480,7 @@ export const interactWithRoommate = async (fromUserId, { toUser, targetUserId, u
   }
 
   // Validate action
-  if (!['LIKE', 'PASS'].includes(action)) {
+  if (!action || !['LIKE', 'PASS'].includes(action)) {
     const error = new Error('Action must be LIKE or PASS');
     error.statusCode = 400;
     error.code = 'INVALID_ACTION';
@@ -468,7 +505,7 @@ export const interactWithRoommate = async (fromUserId, { toUser, targetUserId, u
     throw error;
   }
 
-  // Check for existing interaction before starting transaction
+  // Pre-check for existing interaction before starting transaction
   const existingInteraction = await RoommateInteraction.findOne({
     fromUser: fromUserId,
     toUser: targetId,
@@ -489,7 +526,7 @@ export const interactWithRoommate = async (fromUserId, { toUser, targetUserId, u
 
   try {
     await session.withTransaction(async () => {
-      // 1. Record interaction
+      // 1. Record interaction using session
       const [newInteraction] = await RoommateInteraction.create(
         [
           {
@@ -502,7 +539,7 @@ export const interactWithRoommate = async (fromUserId, { toUser, targetUserId, u
       );
       createdInteraction = newInteraction;
 
-      // 2. If action is LIKE, check for mutual LIKE
+      // 2. Only check for mutual match when action is LIKE
       if (action === 'LIKE') {
         const reciprocalLike = await RoommateInteraction.findOne({
           fromUser: targetId,
@@ -511,49 +548,44 @@ export const interactWithRoommate = async (fromUserId, { toUser, targetUserId, u
         }).session(session);
 
         if (reciprocalLike) {
-          isMatch = true;
-
-          // Determine canonical order for compound unique index { userA, userB }
+          // Canonical ordering guarantees userA < userB for compound unique index
           const id1 = fromUserId.toString();
           const id2 = targetId.toString();
           const [userA, userB] = id1 < id2 ? [fromUserId, targetId] : [targetId, fromUserId];
 
-          // Check if match already exists
-          let existingMatch = await RoommateMatch.findOne({ userA, userB }).session(session);
+          // Check if match document already exists between the two users
+          const existingMatch = await RoommateMatch.findOne({ userA, userB }).session(session);
 
           if (existingMatch) {
-            if (existingMatch.status !== 'ACTIVE') {
-              existingMatch.status = 'ACTIVE';
-              await existingMatch.save({ session });
+            if (existingMatch.status === 'ACTIVE') {
+              match = existingMatch;
+              isMatch = true;
+            } else {
+              // Keep CLOSED matches closed for MVP - do not reactivate automatically
+              match = existingMatch;
+              isMatch = false;
             }
-            match = existingMatch;
           } else {
-            try {
-              const [newMatch] = await RoommateMatch.create(
-                [
-                  {
-                    userA,
-                    userB,
-                    status: 'ACTIVE',
-                  },
-                ],
-                { session }
-              );
-              match = newMatch;
-            } catch (matchCreateError) {
-              // Concurrency safety: handle race condition on duplicate match creation
-              if (matchCreateError.code === 11000) {
-                match = await RoommateMatch.findOne({ userA, userB }).session(session);
-              } else {
-                throw matchCreateError;
-              }
-            }
+            // Create a new ACTIVE match
+            const [newMatch] = await RoommateMatch.create(
+              [
+                {
+                  userA,
+                  userB,
+                  status: 'ACTIVE',
+                },
+              ],
+              { session }
+            );
+            match = newMatch;
+            isMatch = true;
           }
         }
       }
     });
   } catch (error) {
-    if (error.code === 11000) {
+    // Handle MongoDB duplicate key error (code 11000) for race conditions
+    if (error.code === 11000 || error.codeName === 'DuplicateKey') {
       const conflictError = new Error('You have already interacted with this roommate');
       conflictError.statusCode = 409;
       conflictError.code = 'INTERACTION_EXISTS';
@@ -561,22 +593,38 @@ export const interactWithRoommate = async (fromUserId, { toUser, targetUserId, u
     }
     throw error;
   } finally {
+    // End session safely in finally block
     await session.endSession();
   }
 
-  // If a mutual match was established, populate contact details of partner
+  // Only expose contact information when an ACTIVE match exists
   let populatedMatch = null;
-  if (match) {
-    populatedMatch = await RoommateMatch.findById(match._id)
+  if (isMatch && match && match.status === 'ACTIVE') {
+    const rawMatch = await RoommateMatch.findById(match._id)
       .populate('userA', 'name email phone avatar')
       .populate('userB', 'name email phone avatar')
       .lean();
+
+    if (rawMatch) {
+      const isUserA = rawMatch.userA?._id?.toString() === fromUserId.toString();
+      const matchedPartner = isUserA ? rawMatch.userB : rawMatch.userA;
+      populatedMatch = {
+        _id: rawMatch._id,
+        matchId: rawMatch._id,
+        userA: rawMatch.userA,
+        userB: rawMatch.userB,
+        status: rawMatch.status,
+        createdAt: rawMatch.createdAt,
+        updatedAt: rawMatch.updatedAt,
+        matchedUser: matchedPartner,
+      };
+    }
   }
 
   return {
-    interaction: createdInteraction,
+    interaction: createdInteraction?.toObject ? createdInteraction.toObject() : createdInteraction,
     isMatch,
-    match: populatedMatch,
+    match: isMatch ? populatedMatch : null,
   };
 };
 
