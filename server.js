@@ -14,6 +14,7 @@ import userRoutes from './src/routes/user.routes.js';
 import propertyRoutes from './src/routes/property.routes.js';
 import propertyPreferenceRoutes from './src/routes/propertyPreference.routes.js';
 import recommendationRoutes from './src/routes/recommendation.routes.js';
+import roommateRoutes from './src/routes/roommate.routes.js';
 import rateLimit from './src/middlewares/rateLimit.middleware.js';
 
 // Connect to MongoDB + Redis
@@ -43,6 +44,7 @@ app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/properties', propertyRoutes);
 app.use('/api/v1/preferences/property', propertyPreferenceRoutes);
 app.use('/api/v1/recommendations', recommendationRoutes);
+app.use('/api/v1/roommates', roommateRoutes);
 
 // ── Root ─────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
